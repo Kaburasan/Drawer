@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ArtGuide</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0e0c0a;
+  --panel: #201c18;
+  --border: #332e28;
+  --accent: #e8c97a;
+  --soft: #a89880;
+  --text: #f0ebe3;
+  --muted: #7a6e62;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+
+/* ── SPLASH ── */
+#splash {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 28px; z-index: 100; padding: 36px 28px;
+  transition: opacity .4s;
+}
+#splash.hidden { opacity: 0; pointer-events: none; }
+
+.splash-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; letter-spacing: .3em;
+  color: var(--accent); text-transform: uppercase;
+}
+.splash-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(52px, 15vw, 80px);
+  line-height: .95; text-align: center; color: var(--text);
+}
+.splash-title em { font-style: italic; color: var(--accent); }
+.splash-sub {
+  font-size: 14px; color: var(--muted);
+  text-align: center; max-width: 300px; line-height: 1.7;
+}
+.splash-card {
+  width: 100%; max-width: 340px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 20px; padding: 22px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.step { display: flex; align-items: flex-start; gap: 14px; }
+.step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 6px; flex-shrink: 0; }
+.step-text { font-size: 14px; line-height: 1.5; color: var(--soft); }
+.step-text strong { color: var(--text); font-weight: 700; }
+
+.btn-start {
+  width: 100%; max-width: 340px;
+  padding: 18px; border-radius: 16px;
+  background: var(--accent); color: #0e0c0a;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-weight: 700;
+  border: none; cursor: pointer; letter-spacing: .04em;
+  box-shadow: 0 8px 40px rgba(232,201,122,.2);
+  transition: transform .15s;
+}
+.btn-start:active { transform: scale(.97); }
+
+/* ── APP ── */
+#app {
+  position: fixed; inset: 0;
+  /* always in DOM so camera can start early */
+}
+
+/* The real <video> element, fills screen */
+#camVideo {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  background: #0e0c0a;
+}
+
+/* Canvas only for the overlay image + grid */
+#overlayCanvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+
+/* Status bar shown while camera loads */
+#camStatus {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); z-index: 2; pointer-events: none;
+  font-family: 'DM Mono', monospace; font-size: 13px; color: var(--muted);
+  transition: opacity .5s;
+}
+#camStatus.gone { opacity: 0; pointer-events: none; }
+
+/* ── TOP BAR ── */
+.topbar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  padding-top: max(14px, env(safe-area-inset-top));
+  background: linear-gradient(to bottom, rgba(14,12,10,.88) 0%, transparent 100%);
+  z-index: 10;
+}
+.app-logo { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--accent); }
+.topbar-pills { display: flex; gap: 8px; }
+
+.pill {
+  height: 36px; padding: 0 14px; border-radius: 100px;
+  border: 1px solid var(--border);
+  background: rgba(32,28,24,.85); backdrop-filter: blur(10px);
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--muted);
+  cursor: pointer; transition: all .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.pill:active { opacity: .7; }
+.pill.active { border-color: var(--accent); color: var(--accent); background: rgba(232,201,122,.12); }
+
+/* Grid dropdown */
+.grid-menu {
+  position: absolute; top: 68px; right: 18px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 8px;
+  z-index: 20; display: none; flex-direction: column; gap: 2px;
+  min-width: 185px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+}
+.grid-menu.open { display: flex; }
+.grid-opt {
+  padding: 11px 14px; border-radius: 10px;
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  color: var(--soft); transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.grid-opt:active, .grid-opt.selected { background: rgba(232,201,122,.1); color: var(--accent); }
+.grid-opt-icon { font-size: 15px; width: 20px; text-align: center; }
+
+/* ── NO IMAGE HINT ── */
+#noImageHint {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 5;
+}
+.hint-box {
+  border: 1.5px dashed rgba(232,201,122,.25);
+  border-radius: 24px; padding: 36px 44px;
+  text-align: center; background: rgba(14,12,10,.55);
+  backdrop-filter: blur(6px);
+}
+.hint-icon { font-size: 44px; margin-bottom: 14px; }
+.hint-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--accent); }
+.hint-sub { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+/* ── BOTTOM PANEL ── */
+.bottom-panel {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 20px 18px max(20px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(14,12,10,.97) 55%, transparent);
+  z-index: 10; display: flex; flex-direction: column; gap: 16px;
+}
+
+.tint-row { display: flex; align-items: center; gap: 10px; }
+.tint-label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); min-width: 42px;
+}
+.tint-swatches { display: flex; gap: 8px; flex: 1; }
+.swatch {
+  width: 28px; height: 28px; border-radius: 50%;
+  cursor: pointer; border: 2px solid transparent;
+  transition: transform .15s, border-color .15s; flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.swatch:active { transform: scale(.88); }
+.swatch.active { border-color: var(--text); transform: scale(1.15); }
+
+.sliders { display: flex; flex-direction: column; gap: 12px; }
+.slider-row { display: flex; align-items: center; gap: 12px; }
+.slider-label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); min-width: 58px;
+}
+.slider-val {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--accent); min-width: 36px; text-align: right;
+}
+input[type=range] {
+  flex: 1; -webkit-appearance: none;
+  height: 3px; border-radius: 2px; background: var(--border); outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); cursor: pointer;
+  box-shadow: 0 2px 12px rgba(232,201,122,.35);
+}
+
+.action-row { display: flex; gap: 10px; align-items: stretch; }
+
+/* Upload button — NOT a <label> wrapping file input to avoid iOS quirks */
+.btn-upload {
+  flex: 1; padding: 15px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--border);
+  color: var(--text); font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  -webkit-tap-highlight-color: transparent; transition: border-color .2s;
+}
+.btn-upload:active { border-color: var(--accent); }
+
+.btn-sq {
+  width: 52px; border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted);
+  font-size: 20px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent; transition: all .2s;
+}
+.btn-sq.on { border-color: var(--accent); color: var(--accent); background: rgba(232,201,122,.1); }
+
+.drag-hint {
+  position: absolute; bottom: 230px; left: 50%;
+  transform: translateX(-50%);
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: .1em;
+  color: rgba(232,201,122,.55); pointer-events: none; z-index: 6;
+  white-space: nowrap; animation: fp 3.5s ease forwards;
+}
+@keyframes fp { 0%{opacity:0} 15%{opacity:1} 80%{opacity:1} 100%{opacity:0} }
+
+/* Hidden file input — placed off-screen, NOT inside any button */
+#fileInput {
+  position: fixed; left: -9999px; top: -9999px;
+  width: 1px; height: 1px; opacity: 0;
+}
+</style>
+</head>
+<body>
+
+<!-- FILE INPUT — completely detached from layout -->
+<input type="file" id="fileInput" accept="image/*">
+
+<!-- SPLASH -->
+<div id="splash">
+  <span class="splash-eyebrow">Portraits & Illustrations</span>
+  <h1 class="splash-title">Art<br><em>Guide</em></h1>
+  <p class="splash-sub">Overlay any reference image on your camera so you can trace it directly onto paper.</p>
+  <div class="splash-card">
+    <div class="step"><div class="step-dot"></div>
+      <p class="step-text"><strong>Hold phone above paper</strong> — camera facing down</p></div>
+    <div class="step"><div class="step-dot"></div>
+      <p class="step-text"><strong>Upload your reference</strong> — photo, portrait, or illustration</p></div>
+    <div class="step"><div class="step-dot"></div>
+      <p class="step-text"><strong>Adjust & trace</strong> — use grids and tints to guide your lines</p></div>
+  </div>
+  <button class="btn-start" id="btnStart">Open Camera →</button>
+</div>
+
+<!-- APP (always in DOM) -->
+<div id="app">
+  <!-- Real video element — browser draws camera directly here, no canvas needed -->
+  <video id="camVideo" autoplay playsinline muted></video>
+
+  <!-- Overlay canvas: reference image + grid only -->
+  <canvas id="overlayCanvas"></canvas>
+
+  <div id="camStatus">Starting camera…</div>
+
+  <div id="noImageHint">
+    <div class="hint-box">
+      <div class="hint-icon">🎨</div>
+      <div class="hint-title">Choose a Reference</div>
+      <div class="hint-sub">Portrait, illustration, or any image<br>you want to trace onto paper.</div>
+    </div>
+  </div>
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <span class="app-logo">ArtGuide</span>
+    <div class="topbar-pills">
+      <button class="pill" id="btnFlip">↔ Flip</button>
+      <button class="pill" id="btnGridPill">⊞ Grid</button>
+    </div>
+  </div>
+
+  <div class="grid-menu" id="gridMenu">
+    <div class="grid-opt selected" data-grid="none"><span class="grid-opt-icon">✕</span> No Grid</div>
+    <div class="grid-opt" data-grid="thirds"><span class="grid-opt-icon">⊞</span> Rule of Thirds</div>
+    <div class="grid-opt" data-grid="portrait"><span class="grid-opt-icon">🧑</span> Portrait Guide</div>
+    <div class="grid-opt" data-grid="squares"><span class="grid-opt-icon">▦</span> Square Grid</div>
+    <div class="grid-opt" data-grid="diagonal"><span class="grid-opt-icon">╲</span> Diagonals</div>
+  </div>
+
+  <!-- BOTTOM PANEL -->
+  <div class="bottom-panel">
+    <div class="tint-row">
+      <span class="tint-label">Tint</span>
+      <div class="tint-swatches">
+        <div class="swatch active" data-tint="none" style="background:transparent;border:1.5px solid #332e28;"></div>
+        <div class="swatch" data-tint="warm" style="background:#e8c97a;"></div>
+        <div class="swatch" data-tint="cool" style="background:#7ab8e8;"></div>
+        <div class="swatch" data-tint="rose" style="background:#e87a9a;"></div>
+        <div class="swatch" data-tint="green" style="background:#7ae8a0;"></div>
+        <div class="swatch" data-tint="mono" style="background:#c8c8c8;"></div>
+      </div>
+    </div>
+    <div class="sliders">
+      <div class="slider-row">
+        <span class="slider-label">Opacity</span>
+        <input type="range" id="sOpacity" min="5" max="90" value="40">
+        <span class="slider-val" id="vOpacity">40%</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Size</span>
+        <input type="range" id="sScale" min="10" max="200" value="75">
+        <span class="slider-val" id="vScale">75%</span>
+      </div>
+    </div>
+    <div class="action-row">
+      <button class="btn-upload" id="btnUpload">📁 Choose Image</button>
+      <button class="btn-sq" id="btnPause" title="Pause overlay">⏸</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──
+const S = {
+  opacity: 0.40, scale: 0.75,
+  flipped: false, gridMode: 'none',
+  tint: null, paused: false,
+  refImg: null,
+  imgX: null, imgY: null,
+  dragging: false, dragSX: 0, dragSY: 0, imgSX: 0, imgSY: 0,
+  pinchDist: null,
+  animId: null,
+  cameraReady: false,
+};
+
+const TINTS = {
+  warm:[232,201,122], cool:[122,184,232],
+  rose:[232,122,154], green:[122,232,160], mono:[200,200,200],
+};
+
+// ── ELEMENTS ──
+const splash     = document.getElementById('splash');
+const appEl      = document.getElementById('app');
+const camVideo   = document.getElementById('camVideo');
+const ovCanvas   = document.getElementById('overlayCanvas');
+const ovCtx      = ovCanvas.getContext('2d');
+const camStatus  = document.getElementById('camStatus');
+const noHint     = document.getElementById('noImageHint');
+const gridMenu   = document.getElementById('gridMenu');
+const fileInput  = document.getElementById('fileInput');
+
+// ── RESIZE ──
+function resize() {
+  ovCanvas.width  = window.innerWidth;
+  ovCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── CAMERA ──
+// Start camera as soon as page loads so it's ready when splash dismisses.
+(async function initCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } },
+      audio: false,
+    });
+    camVideo.srcObject = stream;
+    // play() must be called after user gesture on some browsers,
+    // but we attempt it early; if it fails we retry on splash dismiss.
+    camVideo.play().catch(() => {});
+    camVideo.addEventListener('playing', () => {
+      S.cameraReady = true;
+      camStatus.classList.add('gone');
+    }, { once: true });
+  } catch (err) {
+    camStatus.textContent = '📷 Allow camera access then reload';
+    console.warn('Camera error:', err);
+  }
+})();
+
+// ── SPLASH DISMISS ──
+document.getElementById('btnStart').addEventListener('click', async () => {
+  splash.classList.add('hidden');
+  setTimeout(() => splash.style.display = 'none', 450);
+
+  // If video didn't auto-play yet (common on iOS), force play now inside user gesture
+  if (camVideo.paused) {
+    camVideo.play().catch(e => console.warn('play error', e));
+  }
+
+  // Kick off render loop
+  if (!S.animId) S.animId = requestAnimationFrame(renderLoop);
+});
+
+// ── RENDER LOOP (overlay only) ──
+function renderLoop() {
+  S.animId = requestAnimationFrame(renderLoop);
+  const W = ovCanvas.width, H = ovCanvas.height;
+  ovCtx.clearRect(0, 0, W, H);
+  if (S.gridMode !== 'none') drawGrid(W, H);
+  if (S.refImg && !S.paused) drawRef(W, H);
+}
+
+// ── DRAW REFERENCE IMAGE ──
+function drawRef(W, H) {
+  const img = S.refImg;
+  const maxW = W * S.scale, maxH = H * S.scale;
+  const r = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+  const dw = img.naturalWidth * r, dh = img.naturalHeight * r;
+  if (S.imgX === null) S.imgX = W / 2;
+  if (S.imgY === null) S.imgY = H / 2;
+  const dx = S.imgX - dw / 2, dy = S.imgY - dh / 2;
+
+  ovCtx.save();
+  ovCtx.globalAlpha = S.opacity;
+
+  if (S.flipped) {
+    ovCtx.translate(W, 0); ovCtx.scale(-1, 1);
+    ovCtx.drawImage(img, W - dx - dw, dy, dw, dh);
+    if (S.tint) {
+      ovCtx.globalCompositeOperation = 'source-atop';
+      ovCtx.globalAlpha = 0.38 * S.opacity;
+      ovCtx.fillStyle = `rgb(${S.tint})`;
+      ovCtx.fillRect(W - dx - dw, dy, dw, dh);
+    }
+  } else {
+    ovCtx.drawImage(img, dx, dy, dw, dh);
+    if (S.tint) {
+      ovCtx.globalCompositeOperation = 'source-atop';
+      ovCtx.globalAlpha = 0.38 * S.opacity;
+      ovCtx.fillStyle = `rgb(${S.tint})`;
+      ovCtx.fillRect(dx, dy, dw, dh);
+    }
+  }
+
+  ovCtx.restore();
+
+  // dashed border
+  ovCtx.save();
+  ovCtx.strokeStyle = `rgba(232,201,122,${0.1 + S.opacity * 0.22})`;
+  ovCtx.lineWidth = 1; ovCtx.setLineDash([5, 7]);
+  if (S.flipped) ovCtx.strokeRect(W - dx - dw + 1, dy + 1, dw - 2, dh - 2);
+  else ovCtx.strokeRect(dx + 1, dy + 1, dw - 2, dh - 2);
+  ovCtx.restore();
+}
+
+// ── GRID ──
+function drawGrid(W, H) {
+  ovCtx.save();
+  const a = n => `rgba(232,201,122,${n})`;
+  function line(x1,y1,x2,y2){ ovCtx.beginPath(); ovCtx.moveTo(x1,y1); ovCtx.lineTo(x2,y2); ovCtx.stroke(); }
+
+  if (S.gridMode === 'thirds') {
+    ovCtx.strokeStyle = a(.22); ovCtx.lineWidth = 1;
+    [1/3,2/3].forEach(f => { line(W*f,0,W*f,H); line(0,H*f,W,H*f); });
+    ovCtx.fillStyle = a(.5);
+    [1/3,2/3].forEach(fx => [1/3,2/3].forEach(fy => {
+      ovCtx.beginPath(); ovCtx.arc(W*fx,H*fy,4,0,Math.PI*2); ovCtx.fill();
+    }));
+  } else if (S.gridMode === 'portrait') {
+    ovCtx.strokeStyle = a(.18); ovCtx.lineWidth = 1; ovCtx.setLineDash([4,8]);
+    line(W/2,0,W/2,H);
+    [0.35,0.50,0.62,0.72].forEach(f => line(0,H*f,W,H*f));
+    ovCtx.strokeStyle = a(.10); line(W/3,0,W/3,H); line(2*W/3,0,2*W/3,H);
+    ovCtx.setLineDash([]); ovCtx.fillStyle = a(.45);
+    ovCtx.font = '10px DM Mono,monospace';
+    [['EYES',.35],['NOSE',.50],['LIPS',.62],['CHIN',.72]].forEach(([l,f]) => ovCtx.fillText(l,8,H*f-5));
+  } else if (S.gridMode === 'squares') {
+    const step = Math.min(W,H)/8;
+    ovCtx.strokeStyle = a(.15); ovCtx.lineWidth = .8;
+    for(let x=step;x<W;x+=step) line(x,0,x,H);
+    for(let y=step;y<H;y+=step) line(0,y,W,y);
+  } else if (S.gridMode === 'diagonal') {
+    ovCtx.strokeStyle = a(.2); ovCtx.lineWidth = 1;
+    line(0,0,W,H); line(W,0,0,H);
+    line(0,0,W/2,H); line(W,0,W/2,H);
+    line(0,H,W/2,0); line(W,H,W/2,0);
+  }
+  ovCtx.restore();
+}
+
+// ── FILE UPLOAD — key fix ──
+// We trigger the hidden input via a regular button click.
+// The change handler uses FileReader (blob URLs can fail after file picker closes on iOS).
+document.getElementById('btnUpload').addEventListener('click', () => {
+  // Reset value so same file can be re-selected
+  fileInput.value = '';
+  fileInput.click();
+});
+
+fileInput.addEventListener('change', function() {
+  const file = this.files && this.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      S.refImg = img;
+      S.imgX = S.imgY = null;
+      noHint.style.display = 'none';
+
+      // Show drag tip briefly
+      const tip = document.createElement('div');
+      tip.className = 'drag-hint';
+      tip.textContent = '← drag to reposition · pinch to resize →';
+      appEl.appendChild(tip);
+      setTimeout(() => tip.remove(), 3800);
+
+      // Ensure render loop is running
+      if (!S.animId) S.animId = requestAnimationFrame(renderLoop);
+
+      // Re-attempt camera play if it stalled during file picker
+      if (camVideo.paused && camVideo.srcObject) {
+        camVideo.play().catch(() => {});
+      }
+    };
+    img.onerror = () => alert('Could not load image. Please try another file.');
+    img.src = e.target.result; // base64 — safe on all browsers
+  };
+  reader.onerror = () => alert('Could not read file.');
+  reader.readAsDataURL(file);
+});
+
+// ── CONTROLS ──
+const sOpacity = document.getElementById('sOpacity');
+const vOpacity = document.getElementById('vOpacity');
+const sScale   = document.getElementById('sScale');
+const vScale   = document.getElementById('vScale');
+
+sOpacity.addEventListener('input', () => { S.opacity = sOpacity.value/100; vOpacity.textContent = sOpacity.value+'%'; });
+sScale.addEventListener('input',   () => { S.scale   = sScale.value/100;   vScale.textContent   = sScale.value+'%'; });
+
+document.getElementById('btnFlip').addEventListener('click', function() {
+  S.flipped = !S.flipped; this.classList.toggle('active', S.flipped);
+});
+
+document.getElementById('btnGridPill').addEventListener('click', function(e) {
+  e.stopPropagation();
+  gridMenu.classList.toggle('open');
+  this.classList.toggle('active', gridMenu.classList.contains('open'));
+});
+document.querySelectorAll('.grid-opt').forEach(el => {
+  el.addEventListener('click', () => {
+    S.gridMode = el.dataset.grid;
+    document.querySelectorAll('.grid-opt').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('btnGridPill').classList.toggle('active', S.gridMode !== 'none');
+    gridMenu.classList.remove('open');
+  });
+});
+document.addEventListener('click', () => gridMenu.classList.remove('open'));
+
+document.querySelectorAll('.swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    const t = sw.dataset.tint;
+    S.tint = t === 'none' ? null : TINTS[t];
+  });
+});
+
+document.getElementById('btnPause').addEventListener('click', function() {
+  S.paused = !S.paused;
+  this.textContent = S.paused ? '▶' : '⏸';
+  this.classList.toggle('on', S.paused);
+});
+
+// ── DRAG TO REPOSITION ──
+ovCanvas.style.pointerEvents = 'auto';
+ovCanvas.addEventListener('pointerdown', e => {
+  if (!S.refImg) return;
+  S.dragging = true;
+  S.dragSX = e.clientX; S.dragSY = e.clientY;
+  S.imgSX = S.imgX ?? ovCanvas.width/2;
+  S.imgSY = S.imgY ?? ovCanvas.height/2;
+  ovCanvas.setPointerCapture(e.pointerId);
+});
+ovCanvas.addEventListener('pointermove', e => {
+  if (!S.dragging) return;
+  S.imgX = S.imgSX + (e.clientX - S.dragSX);
+  S.imgY = S.imgSY + (e.clientY - S.dragSY);
+});
+ovCanvas.addEventListener('pointerup',     () => S.dragging = false);
+ovCanvas.addEventListener('pointercancel', () => S.dragging = false);
+
+// ── PINCH TO SCALE ──
+ovCanvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) S.pinchDist = null;
+}, { passive: true });
+
+ovCanvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (S.pinchDist !== null) {
+      S.scale = Math.max(0.1, Math.min(2.0, S.scale + (dist - S.pinchDist) / 280));
+      sScale.value = Math.round(S.scale * 100);
+      vScale.textContent = sScale.value + '%';
+    }
+    S.pinchDist = dist;
+    e.preventDefault();
+  }
+}, { passive: false });
+
+ovCanvas.addEventListener('touchend', () => S.pinchDist = null);
+</script>
+</body>
+</html>
